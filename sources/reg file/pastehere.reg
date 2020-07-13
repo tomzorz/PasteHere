@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\PasteHere]
+@="&Paste image or text from clipboard as file"
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\PasteHere\command]
+@="D:\\um\\PasteHere\\PasteHere.exe"
