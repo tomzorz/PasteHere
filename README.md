@@ -1,7 +1,7 @@
 # PasteHere
 A tool that helps you paste an image or text from your clipboard as a file
 
-[demo gif](https://raw.githubusercontent.com/tomzorz/PasteHere/master/demo.gif)
+![demo gif](https://github.com/tomzorz/PasteHere/raw/master/demo.gif)
 
 Built using .net core, a few WinForms APIs and an extra sprinkle of p/invoke shell commands. 
 
