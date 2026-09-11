@@ -1,101 +1,73 @@
-﻿using System;
-using System.Diagnostics;
-using System.Drawing.Imaging;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
-using System.Windows.Forms;
-using Microsoft.VisualBasic;
+namespace PasteHere;
 
-namespace PasteHere
+internal static class Program
 {
-    class Program
+    private const string Title = "PasteHere";
+
+    [STAThread]
+    private static int Main(string[] args)
     {
-        // thanks to https://superuser.com/questions/445925/how-to-add-item-to-right-click-menu-when-not-selecting-a-folder-or-file for the regedit
-
-        [STAThread()]
-        static void Main(string[] args)
+        try
         {
-            var fp = Path.Combine(Environment.CurrentDirectory, $"_PH_{Guid.NewGuid()}");
-
-            if (Clipboard.ContainsImage())
+            return args switch
             {
-                fp += ".png";
-                var image = Clipboard.GetImage();
-                using var fs = File.OpenWrite(fp);
-                Debug.Assert(image != null, nameof(image) + " != null");
-                image.Save(fs, ImageFormat.Png);
-
-            } else if (Clipboard.ContainsText())
-            {
-                fp += ".txt";
-                var text = Clipboard.GetText();
-                File.WriteAllText(fp, text);
-            }
-
-            SelectItemInExplorer(fp, true);
+                ["--register"] => Register(),
+                ["--unregister"] => Unregister(),
+                [] => Paste(Environment.CurrentDirectory),
+                [var folder] when Directory.Exists(folder) => Paste(folder),
+                _ => Usage(),
+            };
         }
-
-        // thanks to https://stackoverflow.com/questions/8647447/send-folder-rename-command-to-windows-explorer
-        // and https://stackoverflow.com/questions/3010305/programmatically-selecting-file-in-explorer
-
-        public static void SelectItemInExplorer(string itemPath, bool edit)
+        catch (Exception ex)
         {
-            if (itemPath == null)
-                throw new ArgumentNullException("itemPath");
-
-            var pidl = ILCreateFromPathW(itemPath);
-            IntPtr folder = PathToAbsolutePIDL(pidl, Path.GetDirectoryName(itemPath));
-            IntPtr file = PathToAbsolutePIDL(pidl, itemPath);
-            try
-            {
-                SHOpenFolderAndSelectItems(folder, 1, new[] { file }, edit ? 1 : 0);
-            }
-            finally
-            {
-                ILFree(folder);
-                ILFree(file);
-            }
+            MessageBox.Show(ex.Message, Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
         }
+    }
 
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr ILCreateFromPathW(string pszPath);
-
-        [DllImport("shell32.dll")]
-        private static extern int SHOpenFolderAndSelectItems(IntPtr pidlFolder, uint cidl, IntPtr[] apidl, int dwFlags);
-
-        [DllImport("shell32.dll")]
-        private static extern void ILFree(IntPtr pidl);
-
-        [DllImport("shell32.dll")]
-        private static extern int SHGetDesktopFolder(out IShellFolder ppshf);
-
-        [DllImport("ole32.dll")]
-        private static extern int CreateBindCtx(int reserved, out IBindCtx ppbc);
-
-        [ComImport, Guid("000214E6-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        internal interface IShellFolder
+    private static int Paste(string folder)
+    {
+        var file = ClipboardFile.Write(folder);
+        if (file is null)
         {
-            void ParseDisplayName(IntPtr hwnd, IBindCtx pbc, [In, MarshalAs(UnmanagedType.LPWStr)] string pszDisplayName, out uint pchEaten, out IntPtr ppidl, ref uint pdwAttributes);
-            // NOTE: we declared only what we needed...
+            MessageBox.Show("The clipboard holds neither text nor an image.", Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return 1;
         }
 
-        private static IntPtr GetShellFolderChildrenRelativePIDL(IntPtr hwnd, IShellFolder parentFolder, string displayName)
+        ExplorerSelection.SelectForRename(file);
+        return 0;
+    }
+
+    private static int Register()
+    {
+        ContextMenu.Register();
+        var message = $"\"{ContextMenu.Label}\" now shows up when you right-click the empty space inside a folder.";
+        if (ContextMenu.MachineWideEntryExists)
         {
-            IBindCtx bindCtx;
-            CreateBindCtx(0, out bindCtx);
-            uint pchEaten;
-            uint pdwAttributes = 0;
-            IntPtr ppidl;
-            parentFolder.ParseDisplayName(hwnd, bindCtx, displayName, out pchEaten, out ppidl, ref pdwAttributes);
-            return ppidl;
+            message += "\n\nA machine-wide entry from the old .reg file exists as well, so the menu will show the item twice. "
+                     + "Remove HKEY_CLASSES_ROOT\\Directory\\Background\\shell\\PasteHere in regedit (needs admin rights) to get rid of the duplicate.";
         }
 
-        private static IntPtr PathToAbsolutePIDL(IntPtr hwnd, string path)
-        {
-            IShellFolder desktopFolder;
-            SHGetDesktopFolder(out desktopFolder);
-            return GetShellFolderChildrenRelativePIDL(hwnd, desktopFolder, path);
-        }
+        MessageBox.Show(message, Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        return 0;
+    }
+
+    private static int Unregister()
+    {
+        ContextMenu.Unregister();
+        MessageBox.Show("The context-menu entry is gone.", Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        return 0;
+    }
+
+    private static int Usage()
+    {
+        MessageBox.Show(
+            "PasteHere [folder]      write the clipboard into the folder (default: the current one)\n"
+            + "PasteHere --register    add the Explorer context-menu entry for the current user\n"
+            + "PasteHere --unregister  remove it again",
+            Title,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+        return 2;
     }
 }
